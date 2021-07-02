@@ -3,6 +3,7 @@ package pkg
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/hashicorp/vault/api"
 )
@@ -44,6 +45,8 @@ func GetCassandraCreds(client *api.Client, cluster, dbRole string) (string, stri
 	if !ok {
 		return "", "", errors.New("password is not a string")
 	}
+
+	log.Println("Vault: Cassandra credentials generated")
 
 	return username, password, nil
 }

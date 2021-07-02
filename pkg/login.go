@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -44,8 +45,8 @@ type LoginResponse struct {
 	} `json:"auth"`
 }
 
-func VaultAWSLogin(vaultUrl, profile, role, sharedCredentialsFile string) (string, error) {
-	login, err := newVaultAwsLoginRequest(sharedCredentialsFile, profile, role)
+func VaultAWSLogin(vaultUrl, profile, role, vaultHeaderValue, sharedCredentialsFile string) (string, error) {
+	login, err := newVaultAwsLoginRequest(sharedCredentialsFile, profile, role, vaultHeaderValue)
 	if err != nil {
 		return "", err
 	}
@@ -53,8 +54,8 @@ func VaultAWSLogin(vaultUrl, profile, role, sharedCredentialsFile string) (strin
 	return login.auth(vaultUrl)
 }
 
-func newVaultAwsLoginRequest(filename, profile, role string) (*AwsLoginRequest, error) {
-	headers, url, body, err := createGetCallerIdentity(filename, profile)
+func newVaultAwsLoginRequest(filename, profile, role, vaultHeaderValue string) (*AwsLoginRequest, error) {
+	headers, url, body, err := createGetCallerIdentity(filename, profile, vaultHeaderValue)
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +84,9 @@ func (login *AwsLoginRequest) auth(vaultUrl string) (string, error) {
 	u.Path = "/v1/auth/aws/login"
 
 	req, err := http.NewRequest("POST", u.String(), bytes.NewBuffer(loginRequest))
+	if err != nil {
+		return "", err
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
@@ -100,6 +104,7 @@ func (login *AwsLoginRequest) auth(vaultUrl string) (string, error) {
 
 	switch resp.StatusCode {
 	case 200:
+		log.Println("Vault: AWS login succeeded")
 		loginResponse := LoginResponse{}
 		err = json.Unmarshal(body, &loginResponse)
 		if err != nil {
@@ -107,6 +112,7 @@ func (login *AwsLoginRequest) auth(vaultUrl string) (string, error) {
 		}
 		return loginResponse.Auth.ClientToken, nil
 	default:
+		log.Println("Vault: AWS login error")
 		loginError := api.ResponseError{}
 		err = json.Unmarshal(body, &loginError)
 		if err != nil {
@@ -116,9 +122,11 @@ func (login *AwsLoginRequest) auth(vaultUrl string) (string, error) {
 	}
 }
 
-func createGetCallerIdentity(filename, profile string) (string, string, string, error) {
+func createGetCallerIdentity(filename, profile, vaultHeaderValue string) (string, string, string, error) {
 	creds := credentials.NewSharedCredentials(filename, profile)
 	signer := v4.NewSigner(creds)
+
+	//TODO: Fix this mess by using the AWS SDK to make the GetCallerIdentity request instead.
 
 	region := "us-east-1"
 	host := fmt.Sprintf("sts.%s.amazonaws.com", region)
@@ -130,6 +138,7 @@ func createGetCallerIdentity(filename, profile string) (string, string, string, 
 	callerIdentity.Header.Set("Accept-Encoding", "identity")
 	callerIdentity.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	callerIdentity.Header.Set("User-Agent", "vault-cqlsh")
+	callerIdentity.Header.Add("X-Vault-AWS-IAM-Server-ID", vaultHeaderValue)
 	_, err := signer.Sign(callerIdentity, reader, "sts", region, time.Now().UTC())
 	if err != nil {
 		return "", "", "", err
@@ -139,6 +148,8 @@ func createGetCallerIdentity(filename, profile string) (string, string, string, 
 		return "", "", "", err
 	}
 
+	//We are not actually calling GetCallerIdentity. Vault is doing that, and
+	//we simply return the relevant headers, URN, and body for the Vault AWS login.
 	iamRequestheaders := base64.StdEncoding.EncodeToString(jsonHeaders)
 	iamRequestUrl := base64.StdEncoding.EncodeToString([]byte(stsUrl))
 	iamRequestBody := base64.StdEncoding.EncodeToString([]byte(body))

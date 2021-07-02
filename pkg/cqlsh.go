@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"log"
 	"os"
 	"os/exec"
 	"syscall"
@@ -14,15 +15,15 @@ func ExecCqlsh(username, password, host, port string, extraArgs []string) error 
 	}
 
 	args := []string{"cqlsh", "--username", username, "--password", password}
-	for _, arg := range extraArgs {
-		args = append(args, arg)
-	}
+	args = append(args, extraArgs...)
 	args = append(args, host)
-	if port != "" {
-		args = append(args, port)
-	}
+	// if port != "" {
+	// 	args = append(args, port)
+	// }
 
 	env := os.Environ()
+
+	log.Printf("cqlsh: Starting process with %+v\n", args)
 
 	return syscall.Exec(cqlsh, args, env)
 }

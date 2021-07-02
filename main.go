@@ -10,18 +10,14 @@ import (
 )
 
 func main() {
-	connections := []CassandraConnectionInfo{
-		{
-			CassandraHost:  "172.17.0.2",
-			AuthVaultUrl:   "http://127.0.0.1:8200",
-			AuthAwsProfile: "default",
-			AuthAwsRole:    "eks-staging-cluster",
-			VaultMount:     "testcluster",
-		},
+	connections, err := pkg.LoadConnections()
+	if err != nil {
+		log.Fatal(err)
 	}
+
 	hostPrompt := promptui.Select{
 		Label: "Cassandra Instance",
-		Items: getHosts(connections),
+		Items: pkg.GetDescriptions(connections),
 	}
 
 	index, _, err := hostPrompt.Run()
@@ -46,7 +42,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	token, err := pkg.VaultAWSLogin(c.AuthVaultUrl, c.AuthAwsProfile, c.AuthAwsRole, awsCredentialsFile)
+	token, err := pkg.VaultAWSLogin(c.AuthVaultUrl, c.AuthAwsProfile, c.AuthAwsRole, c.AuthVaultHeader, awsCredentialsFile)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -62,25 +58,4 @@ func main() {
 	}
 
 	pkg.ExecCqlsh(username, password, c.CassandraHost, "9042", os.Args[1:])
-}
-
-type CassandraConnectionInfo struct {
-	CassandraHost  string `json:"host"`
-	AuthVaultUrl   string `json:"auth_vault_url"`
-	AuthAwsProfile string `json:"auth_aws_profile"`
-	AuthAwsRole    string `json:"auth_aws_role"`
-	VaultMount     string `json:"vault_mount"`
-}
-
-func getHosts(connections []CassandraConnectionInfo) []string {
-	hosts := make([]string, len(connections))
-
-	i := 0
-
-	for _, k := range connections {
-		hosts[i] = k.CassandraHost
-		i++
-	}
-
-	return hosts
 }
